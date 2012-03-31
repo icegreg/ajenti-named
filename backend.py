@@ -3,7 +3,8 @@ from shlex import shlex
 import shutil
 import time
 
-DO_BACKUP=True
+# if you live in Chelyabinks you can sat it as False
+DO_BACKUP = True
 
 class Named:
     class Zone:
@@ -88,20 +89,16 @@ class Named:
                 return ['', '']
 
         def append(self, object):
+            self.current.items.append(object)
             if object.__class__ == self.__class__:
                 self.current.statements.append(object)
                 parent = self.current
                 self.current = object
                 self.current.parent = parent
-
-            if self != self.current:
-                self.items.append(object)
-
             if object.__class__ == str().__class__:
                 split_object = object.split()
                 if len(split_object)>1:
                     setattr(self.current, '_'+split_object[0], ' '.join(split_object[1:]))
-            self.current.items.append(object)
 
         def close(self):
             parent = self.current.parent
@@ -129,16 +126,32 @@ class Named:
         def __str__(self):
             return self.name
 
-        def create_config(self):
-            str = ''
-            depth = 0
-            for item in self.items:
+        def _create_config(self, object = None, depth = 0):
+            tmp_str = ''
+            skip = False
+            if not object:
+                object = self
+            if str(object.name.find('inet'))=='0': # small hack
+                skip = True
+
+            for item in object.items:
                 if item.__class__ == self.__class__:
+                    tmp_str += item.name + '{ \n'
                     depth += 1
-                    str += item.name + '\n'
+                    tmp_str += self._create_config(item, depth)
+                else:
+                    tmp_str +=  item + ';\n'
+            if skip:
+                tmp_str += '} \n'
+            else:
+                tmp_str += '};\n'
+            return tmp_str
 
-            return str
-
+        def create_config(self):
+            fh = open('tmp.conf', 'w')
+            fh.write(self._create_config()[:-4])
+            fh.close()
+            return os.popen('named-checkconf -p tmp.conf').read()
 
     def __init__(self):
         self.folder = self.get_config_folder()
@@ -192,12 +205,12 @@ class Named:
         if DO_BACKUP:
             backup_file = os.path.join(folder,filename+'.'+str(int(time.time())))
             shutil.move(full_path, backup_file)
-
         fh = open(full_path, 'w')
         fh.write(self.statements.create_config())
         fh.close()
 
 if __name__ == '__main__':
     named = Named()
-    named.statements.create_config()
-    print named.zones[7].print_zone()
+    #print named.statements.items
+    named.write_config()
+    #print named.zones[7].print_zone()
